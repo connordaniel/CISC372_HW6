@@ -1,3 +1,5 @@
+//run on cisc372
+
 //Simple optimized box blur
 //by: Greg Silber
 //Date: 5/1/2021
@@ -26,11 +28,11 @@
 //            bpp: The bits per pixel in the src image
 //Returns: None
 
-__global__ void computeRow(float* src,float* dest,int rowNum,int pWidth,int radius,int bpp){
+__global__ void computeRow(float* src,float* dest,int pWidth, int height, int radius,int bpp){
     int i;
     int bradius=radius*bpp;
     int row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row < rowNum) {
+    if (row < height) {
         //initialize the first bpp elements so that nothing fails
         for (i=0;i<bpp;i++)
             dest[row*pWidth+i]=src[row*pWidth+i];
@@ -60,7 +62,7 @@ __global__ void computeRow(float* src,float* dest,int rowNum,int pWidth,int radi
 //            radius: the width of the blur
 //            bpp: The bits per pixel in the src image
 //Returns: None
-__global__ void computeColumn(uint8_t* src,float* dest,int col,int pWidth,int height,int radius,int bpp){
+__global__ void computeColumn(uint8_t* src,float* dest,int pWidth,int height,int radius,int bpp){
     int i;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     if (col < pWidth) {
@@ -97,7 +99,7 @@ int main(int argc,char** argv){
     int i;
     int width,height,bpp,pWidth;
     char* filename;
-    uint8_t *img;
+    uint8_t *img, *nImg;
     float* dest,*mid;
     int blocksRow, blocksCol;
 
@@ -107,11 +109,15 @@ int main(int argc,char** argv){
     sscanf(argv[2],"%d",&radius);
    
     img=stbi_load(filename,&width,&height,&bpp,0);
+    
 
     blocksRow = (height + BLOCK - 1) / BLOCK;
     
     pWidth=width*bpp;  //actual width in bytes of an image row
     blocksCol = (pWidth + BLOCK - 1) / BLOCK;
+
+    cudaMalloc(&nImg, sizeof(uint8_t)*pWidth*height);
+    cudaMemcpy(nImg,img, pWidth*height*sizeof(uint8_t), cudaMemcpyHostToDevice);
 
     //mid=malloc(sizeof(float)*pWidth*height);   
     //dest=malloc(sizeof(float)*pWidth*height);   
@@ -128,9 +134,10 @@ int main(int argc,char** argv){
         computeRow(mid,dest,i,pWidth,radius,bpp);
     }
     */
-    computeColumn<<<blocksCol, BLOCK>>>(img, mid, pWidth, height, radius, bpp);
+    computeColumn<<<blocksCol, BLOCK>>>(nImg, mid, pWidth, height, radius, bpp);
     stbi_image_free(img); //done with image
     cudaDeviceSynchronize();
+    cudaMallocManaged(&img, sizeof(uint8_t)*pWidth*height);
     computeRow<<<blocksRow, BLOCK>>>(mid, dest, pWidth, height, radius, bpp);
     cudaFree(mid); //done with mid
     cudaDeviceSynchronize();
